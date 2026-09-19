@@ -70,14 +70,19 @@ class Iface:
 
 
 # ---------------------------------------------------------------------------
-# logging
+# logging  — apply/run по умолчанию молчат (не syslog, не journal, не файл)
 # ---------------------------------------------------------------------------
+
+QUIET = False
+
 
 def stamp() -> str:
     return dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def log(msg: str) -> None:
+    if QUIET:
+        return
     print(f"{stamp()}  {msg}", flush=True)
 
 
@@ -431,6 +436,11 @@ ExecStart={python} {script} run --config {config_path}
 Restart=always
 RestartSec=5
 WorkingDirectory=/
+StandardInput=null
+StandardOutput=null
+StandardError=null
+SyslogLevel=err
+LogLevelMax=err
 
 [Install]
 WantedBy=multi-user.target
@@ -585,7 +595,10 @@ class App:
         apply_once(self.cfg, dry_run=dry_run, interactive=True)
 
     def daemon(self) -> None:
-        print("демон в этом процессе, Ctrl+C стоп. cron не используется.")
+        print("демон без журнала. Ctrl+C стоп. cron не используется.")
+        print("отладка: python3 netsch.py run --verbose")
+        global QUIET
+        QUIET = True
         run_daemon(self.config_path)
 
     def install(self) -> None:
@@ -889,6 +902,9 @@ def run_curses(app: App) -> None:
                     screen_apply(stdscr)
                 elif idx == 5:
                     curses.endwin()
+                    print("демон без журнала. Ctrl+C стоп.")
+                    global QUIET
+                    QUIET = True
                     run_daemon(app.config_path)
                     return
                 elif idx == 6:
@@ -918,6 +934,11 @@ def run_daemon(config_path: Path) -> None:
     signal.signal(signal.SIGTERM, _handle_stop)
     signal.signal(signal.SIGINT, _handle_stop)
     log(f"netsch daemon start config={config_path}")
+    if QUIET:
+        dn = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(dn, 1)
+        os.dup2(dn, 2)
+        os.close(dn)
     while not _STOP:
         cfg = load_config(config_path)
         apply_once(cfg, dry_run=False, interactive=False)
@@ -937,14 +958,23 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="netsch", add_help=True)
     p.add_argument("--config", help="путь к yaml")
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="писать ход работы в терминал (иначе apply/run молчат)",
+    )
     p.add_argument("cmd", nargs="?", choices=["run", "apply", "install"])
     p.add_argument("--version", action="version", version=f"netsch {VERSION} — by {AUTHOR}")
     return p.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
+    global QUIET
     args = parse_args(sys.argv[1:] if argv is None else argv)
     path = Path(args.config) if args.config else default_config_path()
+    if args.cmd in ("apply", "run"):
+        QUIET = not args.verbose and not args.dry_run
     if args.cmd == "apply":
         cfg = load_config(path)
         apply_once(cfg, dry_run=args.dry_run, interactive=False)

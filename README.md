@@ -53,6 +53,23 @@ Curses — если терминал нормальный. Узкий SSH или
 - Не гасить интерфейс с default route и интерфейс текущего SSH, пока `force` не true.
 - Перед гашением такого интерфейса меню явно спрашивает.
 
+## Логи
+
+`apply` и `run` по умолчанию молчат: нет файла лога, нет syslog, нет записей netsch в journal.
+
+Юнит systemd глушит stdout/stderr (`StandardOutput=null`, `StandardError=null`).
+
+```bash
+python3 netsch.py apply          # тихо
+python3 netsch.py run            # тихо, цикл
+python3 netsch.py apply --dry-run
+python3 netsch.py run --verbose  # только если нужно видеть ход в терминале
+```
+
+systemd при enable всё равно пишет свои `Started/Stopped netsch.service`. Это сообщения systemd, не netsch.
+
+Ядро/драйвер NIC при `ip link up/down` иногда пишет в dmesg — это не отключаем.
+
 ## Сервисные аргументы (автозапуск)
 
 ```bash
